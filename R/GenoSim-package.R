@@ -1,0 +1,72 @@
+#' GenoSim: Forward-Time Genotype Simulator for Clinical and Population Genetics
+#'
+#' @description
+#' GenoSim provides a complete pipeline for simulating diploid SNP genotype
+#' data in settings where real human NGS data are scarce due to ethical,
+#' budgetary, or regulatory constraints. It implements biologically realistic
+#' forward-time population genetics models and supports two simulation modes:
+#'
+#' \strong{Population mode} (\code{\link{simulate_population}}):
+#' Generates founder genotypes from allele frequencies and propagates them
+#' forward for up to 10 generations using Wright-Fisher drift, directional
+#' selection, mutation, and recombination.
+#'
+#' \strong{Pedigree mode} (\code{\link{simulate_from_pedigree}}):
+#' Reads real family VCF files and a pedigree CSV, reconstructs phased
+#' haplotypes from observed genotypes, propagates them through the exact
+#' family structure respecting inbreeding coefficients and recombination,
+#' and optionally appends additional synthetic generations.
+#'
+#' @section Main functions:
+#' \describe{
+#'   \item{\code{\link{simulate_population}}}{Forward population simulator (no pedigree)}
+#'   \item{\code{\link{simulate_from_pedigree}}}{Pedigree-constrained VCF-based simulator}
+#'   \item{\code{\link{read_vcf_cohort}}}{Read family VCFs into a dosage matrix}
+#'   \item{\code{\link{read_pedigree}}}{Read and validate a pedigree CSV}
+#'   \item{\code{\link{hwe_test}}}{Per-SNP Hardy-Weinberg equilibrium test}
+#'   \item{\code{\link{compute_ld}}}{Pairwise linkage disequilibrium (r?? and D')}
+#'   \item{\code{\link{detect_roh}}}{Runs of homozygosity detection}
+#'   \item{\code{\link{run_pca}}}{Principal component analysis on genotype matrix}
+#'   \item{\code{\link{compute_fst}}}{Weir-Cockerham FST between generations}
+#'   \item{\code{\link{diversity_metrics}}}{Nei diversity, Watterson's theta}
+#'   \item{\code{\link{export_vcf}}}{Export simulated genotypes to VCF}
+#'   \item{\code{\link{export_plink}}}{Export to PLINK PED/MAP/RAW}
+#'   \item{\code{\link{export_csv}}}{Export to tidy CSV files}
+#'   \item{\code{\link{plot_dashboard}}}{Six-panel summary dashboard}
+#'   \item{\code{\link{plot_pedigree_tree}}}{Draw family pedigree}
+#'   \item{\code{\link{plot_af_trajectory}}}{Allele frequency trajectories}
+#'   \item{\code{\link{plot_kinship_heatmap}}}{Kinship coefficient heatmap}
+#' }
+#'
+#' @section Example data:
+#' The package ships example data accessible via \code{\link{example_pedigree}}
+#' and \code{\link{example_vcf_dir}}, representing a 25-member, 4-generation
+#' consanguineous family (FAM_KHAN) with 200 SNPs across chromosomes 1-5.
+#'
+#' @references
+#' \itemize{
+#'   \item Wright S (1931) Evolution in Mendelian populations.
+#'         \emph{Genetics} 16:97???159.
+#'   \item Weir BS, Cockerham CC (1984) Estimating F-statistics for the
+#'         analysis of population structure. \emph{Evolution} 38:1358???1370.
+#'   \item Nei M (1973) Analysis of gene diversity in subdivided populations.
+#'         \emph{PNAS} 70:3321???3323.
+#' }
+#'
+#' @author GenoSim Authors \email{genosim@@example.com}
+#' @keywords package genetics simulation
+#' @aliases GenoSim-package
+#' @docType package
+"_PACKAGE"
+
+# ---- Package-level constants (not exported) ---------------------------------
+
+.MISSING_PARENT <- c("0", "NA", "", ".", "unknown")
+
+.SIM_COLORS <- c(
+  "#2563EB", "#16A34A", "#DC2626", "#D97706", "#7C3AED",
+  "#0891B2", "#BE185D", "#65A30D", "#EA580C", "#4F46E5"
+)
+
+# Null-coalescing operator (internal)
+`%||%` <- function(a, b) if (!is.null(a) && length(a) > 0 && !is.na(a[1])) a else b

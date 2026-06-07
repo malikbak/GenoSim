@@ -1,0 +1,43 @@
+Package: GenoSim
+Type: Package
+Title: Forward-Time Genotype Simulator for Clinical and Population
+        Genetics
+Version: 1.1.2
+Date: 2026-06-07
+Authors@R: c(
+    person("GenoSim", "Abu Bakar",
+           email = "malikabubakar279@gmail.com",
+           role  = c("aut", "cre"),
+           comment = c(ORCID = "0000-0000-0000-0000"))
+  )
+Description: GenoSim simulates diploid SNP genotype data for up to 10
+    generations using biologically realistic population genetics models.
+    It supports Hardy-Weinberg equilibrium as a baseline, Wright-Fisher
+    genetic drift, directional selection, mutation, and recombination.
+    A pedigree-constrained mode ingests real family VCF files together with
+    a pedigree CSV, reconstructs founder haplotypes, propagates genotypes
+    exactly through the observed family structure (respecting inbreeding
+    coefficients), and appends additional synthetic generations. Analytical
+    functions cover HWE testing, linkage disequilibrium (r-squared and D
+    prime), runs of homozygosity (ROH), principal component analysis (PCA),
+    FST estimation, and Nei gene diversity. Data can be exported in VCF,
+    PLINK (PED/MAP/RAW), and tidy CSV formats. All plots use base R graphics
+    with no external dependencies, making the package suitable for
+    resource-limited clinical computing environments where data are scarce
+    due to ethical, budgetary, or regulatory constraints.
+License: MIT + file LICENSE
+URL: https://github.com/malikbak/GenoSim
+BugReports: https://github.com/malikbak/GenoSim/issues
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Depends: R (>= 4.0.0)
+Imports: stats, utils, grDevices, graphics, tools
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+NeedsCompilation: no
+Packaged: 2026-05-26 11:20:38 UTC; root
+Author: GenoSim Authors [Abu Bakar]
+Maintainer: GenoSim Authors <malikabubakar279@gmail.com>
+Config/roxygen2/version: 8.0.0
