@@ -48,7 +48,7 @@ install.packages("path/to/GenoSim_1.0.0.tar.gz", repos = NULL, type = "source")
 
 ```r
 # install.packages("remotes")
-remotes::install_github("example/GenoSim")
+remotes::install_github("malikbak/GenoSim")
 ```
 
 ### Dependencies
