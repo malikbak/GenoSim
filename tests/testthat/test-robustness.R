@@ -29,13 +29,6 @@ test_that("compute_ld tolerates NA genotypes (pairwise complete)", {
   }
 })
 
-test_that(".wf_drift never returns NA even at boundary frequencies", {
-  p <- c(0, 1, 1e-12, 1 - 1e-12, 0.5, NA_real_)
-  out <- GenoSim:::.wf_drift(p, 50L)
-  expect_false(any(is.na(out)))
-  expect_true(all(out >= 0 & out <= 1))
-})
-
 test_that("simulate_from_pedigree synthetic generations contain no NA", {
   vcf <- read_vcf_cohort(example_vcf_dir(), verbose = FALSE)
   ped <- read_pedigree(example_ped_path(), verbose = FALSE)

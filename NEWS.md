@@ -1,3 +1,46 @@
+# GenoSim 1.1.3
+
+## Correctness fixes (mathematical / logical)
+
+* `compute_ld()` now reports the correct linkage-disequilibrium statistics.
+  Previously `r^2` was under-estimated by a factor of ~4 and `D'` by a factor
+  of ~2 (two perfectly correlated SNPs returned `r^2 = 0.25`). `r^2` is now the
+  squared correlation of allele dosages and the haplotypic `D` is recovered
+  correctly from the dosage covariance (`cov(x,y) = 2D`). New `min_pair_n`
+  argument controls the minimum shared non-missing individuals per pair.
+
+* `hwe_test()` no longer biases the chi-squared statistic when genotypes are
+  missing: expected counts now use the number of *called* genotypes rather than
+  the total number of individuals (previously 50% missingness could turn a true
+  HWE locus into a spurious deviation).
+
+* **Selection and mutation now actually affect the simulated genotypes.** In
+  `simulate_population()` (and the synthetic generations of
+  `simulate_from_pedigree()`) `selection_s` and `mut_rate` previously modified
+  only a recorded allele-frequency vector, leaving the genotype output
+  unchanged. Mutation is now applied to each transmitted gamete and selection
+  as fitness-proportional resampling of offspring (preserving linkage), so both
+  forces are reflected in the genotypes and all downstream analyses.
+
+* `allele_freqs` and `summary_stats` from `simulate_population()` are now
+  computed from the genotypes themselves, so `exp_heterozygosity`,
+  `inbreeding_fis`, `mean_maf` and `frac_fixed` are mutually consistent with the
+  returned matrices (same class of fix previously applied to
+  `simulate_from_pedigree()`). `n_eff` now caps the per-generation breeding pool.
+
+* `simulate_population()` SNP identifiers now match their coordinates: the
+  position embedded in `snp_id` (`chrX_<pos>`) is the same value stored in
+  `pos_bp` (previously they were two independent random draws).
+
+* `export_plink()` now assigns each individual's sex once and writes it
+  identically to the `.ped` and `.raw` files (previously the two files were
+  randomised independently), tolerates missing genotypes (written as PLINK
+  `0 0` / `NA`), and uses allele letters consistent with `export_vcf()`.
+
+* Removed the now-unused allele-frequency helpers and a remaining same-name
+  duplicate (`.draw_population_afs`) to keep a single source of truth and avoid
+  the file-load-order shadowing that caused earlier bugs.
+
 # GenoSim 1.1.2
 
 ## Bug fixes and robustness

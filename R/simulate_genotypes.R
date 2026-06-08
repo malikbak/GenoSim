@@ -38,10 +38,11 @@
 
   snp_list <- mapply(function(chr, n, len) {
     if (n == 0) return(NULL)
+    pos <- sort(sample.int(len * 1e6L, n))   # one draw shared by snp_id & pos_bp
     data.frame(
-      snp_id = paste0("chr", chr, "_", sort(sample.int(len * 1e6L, n))),
+      snp_id = paste0("chr", chr, "_", pos),
       chrom  = chr,
-      pos_bp = sort(sample.int(len * 1e6L, n)),
+      pos_bp = pos,
       stringsAsFactors = FALSE
     )
   }, chromosomes, n_per_chrom, sel_lengths[as.character(chromosomes)],
@@ -79,35 +80,12 @@
   as.integer(ifelse(u < prob_0, 0L, ifelse(u < prob_0 + prob_1, 1L, 2L)))
 }
 
-#' Wright-Fisher drift
-#'
-#' NA-safe and boundary-safe: missing frequencies are treated as fixed (0), and
-#' if \code{rbinom()} returns NA for a probability sitting exactly on (or a
-#' floating-point hair past) the [0, 1] boundary, the expected count is used.
-#' @noRd
-.wf_drift <- function(p_vec, N_eff) {
-  size <- 2L * N_eff
-  prob <- pmin(pmax(p_vec, 0), 1)
-  prob[is.na(prob)] <- 0
-  k <- stats::rbinom(length(prob), size = size, prob = prob)
-  na_k <- is.na(k)
-  if (any(na_k)) k[na_k] <- round(prob[na_k] * size)
-  k / size
-}
-
-#' Additive selection
-#' @noRd
-.apply_selection <- function(p_vec, s) {
-  q_vec  <- 1 - p_vec
-  mean_w <- p_vec^2 * (1+s) + 2*p_vec*q_vec*(1+s/2) + q_vec^2
-  p_new  <- (p_vec^2 * (1+s) + p_vec*q_vec*(1+s/2)) / mean_w
-  pmin(pmax(p_new, 0), 1)
-}
-
-#' Mutation
-#' @noRd
-.apply_mutation <- function(p_vec, mu)
-  p_vec * (1 - mu) + (1 - p_vec) * mu
+# NOTE: drift, selection and mutation are no longer applied to a separate
+# allele-frequency vector (which previously left the genotypes unaffected).
+# They now act directly on the genotypes inside .simulate_generation():
+#   - drift      via finite-pool recombinant transmission (n_eff breeders),
+#   - mutation   via recurrent per-allele flips on each gamete,
+#   - selection  via fitness-proportional resampling of offspring.
 
 #' Recombination-aware gamete transmission
 #' @noRd
@@ -131,14 +109,27 @@
 }
 
 #' Simulate one generation via random mating
+#'
+#' Genotypes are produced by recombinant gamete transmission (drift + LD), with
+#' optional recurrent mutation applied to each gamete and optional viability
+#' selection applied to the resulting offspring. Mutation and selection
+#' therefore act on the genotypes themselves (not merely on a recorded
+#' frequency), so they are reflected in everything derived from the genotypes.
+#'
+#' @param mut_rate Per-allele recurrent mutation rate applied to each gamete.
+#' @param selection_s Additive selection coefficient. Per-locus fitness is
+#'   \eqn{w_{AA}=1+s}, \eqn{w_{Aa}=1+s/2}, \eqn{w_{aa}=1}, combined
+#'   multiplicatively across loci; offspring are then resampled to the same
+#'   count with probability proportional to fitness (preserving linkage).
 #' @noRd
-.simulate_generation <- function(parent_genos, snp_map, F_coef, n_offspring) {
+.simulate_generation <- function(parent_genos, snp_map, F_coef, n_offspring,
+                                  mut_rate = 0, selection_s = 0) {
   n_parents <- nrow(parent_genos)
   n_snps    <- ncol(parent_genos)
   n_couples <- floor(n_parents / 2)
   pair_idx  <- matrix(sample(n_parents, n_couples * 2L), ncol = 2)
 
-  do.call(rbind, lapply(seq_len(n_couples), function(i) {
+  offspring <- do.call(rbind, lapply(seq_len(n_couples), function(i) {
     p1_dos <- parent_genos[pair_idx[i, 1], ]
     p2_dos <- parent_genos[pair_idx[i, 2], ]
     # Missing parental dosages (NA, e.g. from unimputed VCF calls carried in an
@@ -153,9 +144,29 @@
       g1 <- .transmit_gamete(h1_p1, h2_p1, snp_map)
       g2 <- .transmit_gamete(h1_p2, h2_p2, snp_map)
       if (stats::runif(1) < F_coef) g2 <- g1
+      if (mut_rate > 0) {                       # recurrent two-allele mutation
+        m1 <- stats::runif(n_snps) < mut_rate; g1[m1] <- 1L - g1[m1]
+        m2 <- stats::runif(n_snps) < mut_rate; g2[m2] <- 1L - g2[m2]
+      }
       g1 + g2
     }))
   }))
+
+  # Viability selection on whole genomes (preserves LD): survival probability
+  # proportional to multilocus additive fitness. Computed on the log scale for
+  # numerical stability.
+  if (selection_s != 0 && !is.null(offspring) && nrow(offspring) > 1L) {
+    s    <- max(selection_s, -0.999999)                # guard log(1+s)
+    logw <- rowSums(offspring == 1L) * log1p(s/2) +
+            rowSums(offspring == 2L) * log1p(s)
+    w    <- exp(logw - max(logw, na.rm = TRUE))
+    if (sum(w) > 0) {
+      keep      <- sample.int(nrow(offspring), nrow(offspring),
+                              replace = TRUE, prob = w)
+      offspring <- offspring[keep, , drop = FALSE]
+    }
+  }
+  offspring
 }
 
 # ---- Public API -------------------------------------------------------------
@@ -183,8 +194,10 @@
 #' @param maf_min Numeric in \eqn{(0, 0.5]}. Minimum minor allele frequency
 #'   assigned to founder SNPs. Founder allele frequencies are drawn uniformly
 #'   from \code{[maf_min, 0.5]}.
-#' @param n_eff Integer or \code{NULL}. Effective population size \eqn{N_e}
-#'   governing genetic drift intensity. Defaults to \code{n_founders}.
+#' @param n_eff Integer or \code{NULL}. Effective population size \eqn{N_e}.
+#'   Each generation the breeding pool is capped at \code{n_eff} individuals
+#'   (a random subset is chosen when more are available), which governs the
+#'   strength of genetic drift. Defaults to \code{n_founders}.
 #' @param n_offspring_per_couple Integer \eqn{\ge 2}. Number of offspring
 #'   produced per mating pair per generation.
 #' @param chromosomes Integer vector. Autosome numbers (subset of 1???22) across
@@ -214,11 +227,21 @@
 #' \deqn{P(Aa) = 2pq(1-F)}
 #' \deqn{P(aa) = q^2(1-F) + qF}
 #'
-#' \strong{Drift:} Each generation, allele frequencies are updated via a
-#' Binomial draw \eqn{Bin(2N_e, p)} (Wright-Fisher model).
+#' Drift, mutation and selection all act directly on the genotypes (not on a
+#' separate frequency vector), so \code{allele_freqs} and \code{summary_stats}
+#' are always consistent with the returned genotype matrices.
 #'
-#' \strong{Selection:} Additive model with fitness \eqn{w_{AA}=1+s},
-#' \eqn{w_{Aa}=1+s/2}, \eqn{w_{aa}=1}.
+#' \strong{Drift:} Founders aside, each generation is produced by recombinant
+#' Mendelian transmission from a finite breeding pool of up to \eqn{N_e}
+#' parents, which reproduces Wright-Fisher genetic drift.
+#'
+#' \strong{Mutation:} Recurrent bidirectional (\eqn{A \leftrightarrow a})
+#' mutation is applied to every transmitted gamete at rate \code{mut_rate}.
+#'
+#' \strong{Selection:} Viability selection with additive per-locus fitness
+#' \eqn{w_{AA}=1+s}, \eqn{w_{Aa}=1+s/2}, \eqn{w_{aa}=1}, combined
+#' multiplicatively across loci; offspring survive in proportion to fitness
+#' (whole-genome resampling, which preserves linkage).
 #'
 #' \strong{Recombination:} Haldane mapping function applied between adjacent
 #' SNPs on each chromosome, with default rate \eqn{10^{-8}} per bp per meiosis.
@@ -303,7 +326,9 @@ simulate_population <- function(
 
   af_track <- matrix(NA_real_, nrow = n_generations + 1L, ncol = n_snps_act,
                      dimnames = list(paste0("gen", 0:n_generations), snp_map$snp_id))
-  af_track[1L, ] <- p_founder
+  # Record the realised founder allele frequency (consistent with the stored
+  # genotypes) rather than the parametric target p_founder.
+  af_track[1L, ] <- colMeans(geno_founders) / 2
 
   geno_store      <- vector("list", n_generations + 1L)
   geno_store[[1]] <- geno_founders
@@ -313,13 +338,19 @@ simulate_population <- function(
   if (verbose) message("[2/4] Running forward simulation...")
   for (gen in seq_len(n_generations)) {
     if (verbose) message(sprintf("  -> Generation %d/%d", gen, n_generations))
-    new_genos  <- .simulate_generation(geno_store[[gen]], snp_map,
-                                        inbreeding_F, n_offspring_per_couple)
-    p_obs      <- colMeans(new_genos) / 2
-    p_current  <- .apply_mutation(.apply_selection(.wf_drift(p_obs, n_eff),
-                                                    selection_s), mut_rate)
-    p_current  <- pmin(pmax(p_current, 0), 1)
-    af_track[gen + 1L, ] <- p_current
+    # Drift, selection and mutation all act on the genotypes. n_eff caps the
+    # breeding pool: when more individuals are available than the effective
+    # size, a random n_eff are chosen as parents, which sets the drift strength.
+    breeders <- geno_store[[gen]]
+    if (nrow(breeders) > n_eff)
+      breeders <- breeders[sample(nrow(breeders), n_eff), , drop = FALSE]
+    new_genos  <- .simulate_generation(breeders, snp_map, inbreeding_F,
+                                       n_offspring_per_couple,
+                                       mut_rate = mut_rate,
+                                       selection_s = selection_s)
+    # Record the *actual* allele frequency of the produced genotypes so that
+    # allele_freqs and every summary statistic stay consistent with the data.
+    af_track[gen + 1L, ] <- colMeans(new_genos) / 2
     n_new <- nrow(new_genos)
     rownames(new_genos) <- paste0("gen", gen, "_ind", seq_len(n_new))
     colnames(new_genos) <- snp_map$snp_id
@@ -329,19 +360,21 @@ simulate_population <- function(
   if (verbose) message("[3/4] Computing summary statistics...")
   summary_stats <- do.call(rbind, lapply(seq_along(geno_store), function(i) {
     g   <- geno_store[[i]]
-    p   <- af_track[i, ]
-    obs <- mean(g == 1L)
-    exp <- mean(2 * p * (1 - p))
+    # Derive the allele frequency from the genotypes themselves so obs/exp/FIS/
+    # MAF/frac_fixed are mutually consistent with the returned matrix.
+    p   <- colMeans(g, na.rm = TRUE) / 2
+    obs <- mean(g == 1L, na.rm = TRUE)
+    exp <- mean(2 * p * (1 - p), na.rm = TRUE)
     data.frame(
       generation         = i - 1L,
       n_individuals      = nrow(g),
       n_snps             = ncol(g),
       obs_heterozygosity = round(obs, 5),
       exp_heterozygosity = round(exp, 5),
-      inbreeding_fis     = round(if (exp > 0) 1 - obs/exp else NA_real_, 5),
-      mean_maf           = round(mean(pmin(p, 1-p)), 5),
-      frac_fixed         = round(mean(p <= 0 | p >= 1), 5),
-      mean_dosage        = round(mean(g), 5),
+      inbreeding_fis     = round(if (!is.na(exp) && exp > 0) 1 - obs/exp else NA_real_, 5),
+      mean_maf           = round(mean(pmin(p, 1-p), na.rm = TRUE), 5),
+      frac_fixed         = round(mean(p <= 0 | p >= 1, na.rm = TRUE), 5),
+      mean_dosage        = round(mean(g, na.rm = TRUE), 5),
       stringsAsFactors   = FALSE
     )
   }))

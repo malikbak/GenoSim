@@ -40,8 +40,10 @@ Positive values favour the alternative allele; 0 gives neutral evolution.}
 assigned to founder SNPs. Founder allele frequencies are drawn uniformly
 from \code{[maf_min, 0.5]}.}
 
-\item{n_eff}{Integer or \code{NULL}. Effective population size \eqn{N_e}
-governing genetic drift intensity. Defaults to \code{n_founders}.}
+\item{n_eff}{Integer or \code{NULL}. Effective population size \eqn{N_e}.
+Each generation the breeding pool is capped at \code{n_eff} individuals
+(a random subset is chosen when more are available), which governs the
+strength of genetic drift. Defaults to \code{n_founders}.}
 
 \item{n_offspring_per_couple}{Integer \eqn{\ge 2}. Number of offspring
 produced per mating pair per generation.}
@@ -84,11 +86,21 @@ Under inbreeding coefficient \eqn{F}, genotype probabilities are:
 \deqn{P(Aa) = 2pq(1-F)}
 \deqn{P(aa) = q^2(1-F) + qF}
 
-\strong{Drift:} Each generation, allele frequencies are updated via a
-Binomial draw \eqn{Bin(2N_e, p)} (Wright-Fisher model).
+Drift, mutation and selection all act directly on the genotypes (not on a
+separate frequency vector), so \code{allele_freqs} and \code{summary_stats}
+are always consistent with the returned genotype matrices.
 
-\strong{Selection:} Additive model with fitness \eqn{w_{AA}=1+s},
-\eqn{w_{Aa}=1+s/2}, \eqn{w_{aa}=1}.
+\strong{Drift:} Founders aside, each generation is produced by recombinant
+Mendelian transmission from a finite breeding pool of up to \eqn{N_e}
+parents, which reproduces Wright-Fisher genetic drift.
+
+\strong{Mutation:} Recurrent bidirectional (\eqn{A \leftrightarrow a})
+mutation is applied to every transmitted gamete at rate \code{mut_rate}.
+
+\strong{Selection:} Viability selection with additive per-locus fitness
+\eqn{w_{AA}=1+s}, \eqn{w_{Aa}=1+s/2}, \eqn{w_{aa}=1}, combined
+multiplicatively across loci; offspring survive in proportion to fitness
+(whole-genome resampling, which preserves linkage).
 
 \strong{Recombination:} Haldane mapping function applied between adjacent
 SNPs on each chromosome, with default rate \eqn{10^{-8}} per bp per meiosis.

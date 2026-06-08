@@ -36,14 +36,19 @@
 #' @seealso \code{\link{simulate_population}}, \code{\link{compute_ld}}
 #' @export
 hwe_test <- function(geno_matrix, alpha = 0.05) {
-  n   <- nrow(geno_matrix)
   res <- apply(geno_matrix, 2, function(g) {
     n0 <- sum(g == 0L, na.rm = TRUE)
     n1 <- sum(g == 1L, na.rm = TRUE)
     n2 <- sum(g == 2L, na.rm = TRUE)
-    p  <- (2*n2 + n1) / (2*n)
+    # Use the number of *called* (non-missing) genotypes, not nrow(): expected
+    # counts must sum to the same total as the observed counts, otherwise
+    # missing data spuriously inflates the chi-squared statistic.
+    n_called <- n0 + n1 + n2
+    if (n_called == 0L)
+      return(c(chi2 = NA_real_, p_value = NA_real_))
+    p  <- (2*n2 + n1) / (2*n_called)
     q  <- 1 - p
-    e0 <- n * q^2; e1 <- n * 2*p*q; e2 <- n * p^2
+    e0 <- n_called * q^2; e1 <- n_called * 2*p*q; e2 <- n_called * p^2
     if (any(c(e0, e1, e2) < 1e-10))
       return(c(chi2 = NA_real_, p_value = NA_real_))
     chi2 <- (n0-e0)^2/e0 + (n1-e1)^2/e1 + (n2-e2)^2/e2
@@ -123,10 +128,16 @@ compute_ld <- function(geno_matrix, snp_map, max_snps = 500L,
         x  <- x[ok]; y <- y[ok]
         px <- mean(x)/2;  py <- mean(y)/2
         if (px %in% c(0,1) || py %in% c(0,1)) next
-        D    <- mean((x/2)*(y/2)) - px*py
-        r2   <- D^2 / (px*(1-px)*py*(1-py))
+        if (stats::sd(x) == 0 || stats::sd(y) == 0) next  # e.g. all-het locus
+        # r^2 is the squared correlation of allele dosages (the standard
+        # genotypic LD estimate, as reported by e.g. PLINK --r2). The haplotypic
+        # coefficient D is recovered from the dosage covariance via
+        # cov(x, y) = 2 * D, so D = (E[xy] - E[x]E[y]) / 2.
+        r2   <- stats::cor(x, y)^2
+        D    <- (mean(x*y) - mean(x)*mean(y)) / 2
         Dmax <- if (D > 0) min(px*(1-py), py*(1-px)) else max(-px*py, -(1-px)*(1-py))
         Dp   <- if (abs(Dmax) > 1e-12) D/Dmax else NA_real_
+        r2   <- min(r2, 1); Dp <- max(-1, min(1, Dp))
         ld_list[[length(ld_list)+1]] <- data.frame(
           snp_a   = ids[i], snp_b = ids[j], chrom = chr,
           dist_bp = dist, r2 = round(r2,5), D_prime = round(Dp,5),

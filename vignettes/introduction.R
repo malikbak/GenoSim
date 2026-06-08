@@ -11,7 +11,7 @@ library(GenoSim)
 
 ## ----install, eval=FALSE------------------------------------------------------
 # # From a local zip file:
-# install.packages("GenoSim_1.1.2.tar.gz", repos = NULL, type = "source")
+# install.packages("GenoSim_1.1.3.tar.gz", repos = NULL, type = "source")
 # 
 # # Or via remotes from GitHub (once published):
 # # remotes::install_github("example/GenoSim")

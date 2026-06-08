@@ -50,7 +50,7 @@ export_vcf <- function(sim_result, generation = "all",
     writeLines(c(
       "##fileformat=VCFv4.2",
       paste0("##fileDate=", format(Sys.Date(), "%Y%m%d")),
-      "##source=GenoSim_v1.1.2",
+      "##source=GenoSim_v1.1.3",
       "##reference=GRCh38",
       '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">',
       '##INFO=<ID=GEN,Number=1,Type=Integer,Description="Simulated Generation">',
@@ -119,30 +119,52 @@ export_plink <- function(sim_result, generation = 0L,
   n_ind   <- nrow(geno)
   stub    <- file.path(out_dir, paste0(out_prefix, "_gen", sprintf("%02d", generation)))
 
+  # Allele letters per SNP, consistent with export_vcf() (REF default "A",
+  # ALT default "T"): dosage 0 -> REF/REF, 1 -> REF/ALT, 2 -> ALT/ALT.
+  ref <- if (!is.null(snp_map$ref)) snp_map$ref else rep("A", nrow(snp_map))
+  alt <- if (!is.null(snp_map$alt)) snp_map$alt else rep("T", nrow(snp_map))
+  ref[is.na(ref) | ref == ""] <- "A"
+  alt[is.na(alt) | alt == ""] <- "T"
+
+  # Assign SEX once and reuse for BOTH .ped and .raw so an individual's sex is
+  # identical across files. Use the pedigree's recorded sex when available.
+  sex_vec <- rep(0L, n_ind)
+  ped_tab <- sim_result$pedigree
+  if (!is.null(ped_tab) && all(c("individual_id","sex") %in% names(ped_tab))) {
+    m <- match(rownames(geno), ped_tab$individual_id)
+    sex_vec <- ifelse(is.na(m), 0L, as.integer(ped_tab$sex[m]))
+    sex_vec[is.na(sex_vec)] <- 0L
+  }
+
   # .map
   map_df <- data.frame(CHR=snp_map$chrom, SNP=snp_map$snp_id,
                         CM=0, BP=snp_map$pos_bp)
   utils::write.table(map_df, paste0(stub, ".map"),
                      quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
 
-  # .ped
-  al_mat <- apply(geno, c(1,2), function(d)
-    switch(as.character(d), "0"="T T","1"="T A","2"="A A","0 0"))
+  # .ped  (missing dosages -> PLINK missing genotype "0 0")
+  al_mat <- matrix("0 0", nrow = n_ind, ncol = nrow(snp_map))
+  for (j in seq_len(nrow(snp_map))) {
+    gj <- geno[, j]
+    al_mat[, j] <- ifelse(is.na(gj), "0 0",
+                   ifelse(gj == 0L, paste(ref[j], ref[j]),
+                   ifelse(gj == 1L, paste(ref[j], alt[j]),
+                                    paste(alt[j], alt[j]))))
+  }
   ped_df <- data.frame(
     FID=paste0("GEN",generation), IID=rownames(geno),
-    PAT=0, MAT=0,
-    SEX=sample(c(1L,2L), n_ind, replace=TRUE),
-    PHENO=-9L, al_mat, stringsAsFactors=FALSE)
+    PAT=0, MAT=0, SEX=sex_vec, PHENO=-9L, al_mat, stringsAsFactors=FALSE)
   utils::write.table(ped_df, paste0(stub, ".ped"),
                      quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
 
-  # .raw
+  # .raw  (additive dosage; missing dosages written as NA)
   raw_df <- cbind(
     data.frame(FID=paste0("GEN",generation), IID=rownames(geno),
-               PAT=0, MAT=0, SEX=sample(c(1L,2L),n_ind,replace=TRUE), PHENO=-9L),
+               PAT=0, MAT=0, SEX=sex_vec, PHENO=-9L),
     as.data.frame(geno))
   utils::write.table(raw_df, paste0(stub, ".raw"),
-                     quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+                     quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t",
+                     na = "NA")
 
   message(sprintf("  PLINK: %s (.ped/.map/.raw) | %d individuals", stub, n_ind))
   invisible(list(ped=paste0(stub,".ped"), map=paste0(stub,".map"),

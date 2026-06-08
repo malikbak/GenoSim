@@ -108,15 +108,10 @@
 # code. They are now removed to keep a single (NA-safe, boundary-safe) source of
 # truth and avoid the load-order trap.
 
-.draw_population_afs <- function(p_anc, Fst) {
-  if (Fst == 0) return(p_anc)
-  if (Fst == 1) {
-    return(as.numeric(stats::runif(length(p_anc)) < p_anc))
-  }
-  alpha <- p_anc * (1 - Fst) / Fst
-  beta  <- (1 - p_anc) * (1 - Fst) / Fst
-  stats::rbeta(length(p_anc), alpha, beta)
-}
+# .draw_population_afs() (Balding-Nichols allele-frequency draw) is defined once
+# in population_stratification.R and shared here (it was a same-name duplicate
+# that the alphabetically-later file shadowed; removed to avoid the load-order
+# trap).
 
 .load_af_from_file <- function(file, sep = NULL) {
   if (!file.exists(file)) stop("File not found: ", file)
@@ -373,17 +368,21 @@ simulate_from_pedigree <- function(
     for (eg in seq_len(extra_generations)) {
       si  <- max_obs_gen + 1L + eg
       if (verbose) message(sprintf("  -> Synthetic generation %d", eg))
-      ng  <- .simulate_generation(last, snp_map, mean_F, n_offspring_per_couple)
-      # Any residual missing dosage would otherwise yield NA allele frequencies
-      # (and break detect_roh()/compute_ld() downstream); fall back to 0.5.
-      af_ng <- colMeans(ng, na.rm = TRUE) / 2
-      af_ng[is.na(af_ng)] <- 0.5
-      p   <- .apply_mutation(.apply_selection(.wf_drift(af_ng, n_eff), selection_s), mut_rate)
-      p   <- pmin(pmax(p, 0), 1)
+      # Drift, mutation and selection all act on the genotypes (see
+      # .simulate_generation). n_eff caps the breeding pool to set drift.
+      breeders <- last
+      if (nrow(breeders) > n_eff)
+        breeders <- breeders[sample(nrow(breeders), n_eff), , drop = FALSE]
+      ng  <- .simulate_generation(breeders, snp_map, mean_F,
+                                  n_offspring_per_couple,
+                                  mut_rate = mut_rate, selection_s = selection_s)
       rownames(ng) <- paste0("synth_gen", max_obs_gen + eg, "_ind", seq_len(nrow(ng)))
       colnames(ng) <- snp_map$snp_id
+      # Record the realised genotype allele frequency (consistent with ng).
+      af_ng <- colMeans(ng, na.rm = TRUE) / 2
+      af_ng[is.na(af_ng)] <- 0.5
       geno_store[[si]] <- ng
-      af_store[si, ]   <- p
+      af_store[si, ]   <- af_ng
       last <- ng
       sim_log <- c(sim_log, sprintf("Synthetic gen %d: %d individuals", eg, nrow(ng)))
     }
