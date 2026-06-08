@@ -48,6 +48,34 @@ test_that("simulate_from_pedigree synthetic generations contain no NA", {
   }
 })
 
+# ---- summary_stats consistency with stored genotypes ------------------------
+
+test_that("simulate_from_pedigree summary_stats match the stored genotypes", {
+  vcf <- read_vcf_cohort(example_vcf_dir(), verbose = FALSE)
+  ped <- read_pedigree(example_ped_path(), verbose = FALSE)
+  # Non-trivial selection/mutation make the evolved AF diverge from the
+  # genotype AF, which previously corrupted exp_het/FIS/MAF/frac_fixed for
+  # synthetic generations.
+  sim <- suppressMessages(simulate_from_pedigree(
+    vcf, ped, extra_generations = 3, selection_s = 0.1, mut_rate = 1e-3,
+    seed = 42, verbose = FALSE))
+  ss <- sim$summary_stats
+  for (i in seq_along(sim$genotypes)) {
+    g <- sim$genotypes[[i]]
+    if (is.null(g) || nrow(g) == 0) next
+    af <- colMeans(g, na.rm = TRUE) / 2
+    ho <- mean(g == 1L, na.rm = TRUE)
+    he <- mean(2 * af * (1 - af), na.rm = TRUE)
+    expect_equal(ss$obs_heterozygosity[i], round(ho, 5), tolerance = 1e-5)
+    expect_equal(ss$exp_heterozygosity[i], round(he, 5), tolerance = 1e-5)
+    expect_equal(ss$inbreeding_fis[i], round(1 - ho/he, 5), tolerance = 1e-5)
+    expect_equal(ss$mean_maf[i], round(mean(pmin(af, 1 - af)), 5),
+                 tolerance = 1e-5)
+    expect_equal(ss$mean_dosage[i], round(mean(g, na.rm = TRUE), 5),
+                 tolerance = 1e-5)
+  }
+})
+
 # ---- Issue 2: missing phenotype/sex codes -----------------------------------
 
 test_that("read_pedigree coerces blank sex/phenotype to documented codes", {

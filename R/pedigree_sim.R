@@ -399,8 +399,17 @@ simulate_from_pedigree <- function(
   snp_map$founder_maf <- snp_map$cohort_maf
   
   summary_stats <- do.call(rbind, lapply(seq_along(geno_store), function(i) {
-    g   <- geno_store[[i]]; p <- af_store[i, ]
-    obs <- mean(g == 1L, na.rm = TRUE)
+    g <- geno_store[[i]]
+    has_indiv <- !is.null(g) && nrow(g) > 0L
+    # Describe the genotypes that are actually returned: derive the allele
+    # frequency from g itself rather than af_store. For founders and observed
+    # generations af_store already equals colMeans(g)/2, so this is a no-op
+    # there; for synthetic generations it avoids the mismatch where af_store
+    # holds the drift/selection/mutation-evolved frequency (which the stored
+    # genotypes do not reflect), keeping obs/exp/FIS/MAF/frac_fixed mutually
+    # consistent. The evolved trajectory remains available in `allele_freqs`.
+    p   <- if (has_indiv) colMeans(g, na.rm = TRUE) / 2 else af_store[i, ]
+    obs <- if (has_indiv) mean(g == 1L, na.rm = TRUE) else NA_real_
     exp <- mean(2 * p * (1 - p), na.rm = TRUE)
     data.frame(
       generation         = i - 1L,
@@ -408,10 +417,11 @@ simulate_from_pedigree <- function(
       n_snps             = ncol(g),
       obs_heterozygosity = round(obs, 5),
       exp_heterozygosity = round(exp, 5),
-      inbreeding_fis     = round(if (!is.na(exp) && exp > 0) 1 - obs/exp else NA_real_, 5),
+      inbreeding_fis     = round(if (!is.na(obs) && !is.na(exp) && exp > 0)
+                                   1 - obs/exp else NA_real_, 5),
       mean_maf           = round(mean(pmin(p, 1-p), na.rm=TRUE), 5),
       frac_fixed         = round(mean(p <= 0 | p >= 1, na.rm=TRUE), 5),
-      mean_dosage        = round(mean(g, na.rm=TRUE), 5),
+      mean_dosage        = if (has_indiv) round(mean(g, na.rm=TRUE), 5) else NA_real_,
       source             = if ((i-1L) <= max_obs_gen) "observed_pedigree" else "synthetic",
       stringsAsFactors   = FALSE
     )
