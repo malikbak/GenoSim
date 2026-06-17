@@ -158,7 +158,14 @@
 #' @param seed Random seed
 #' @param verbose Logical
 #'
-#' @return List with genotypes, pedigree, snp_map, allele_freqs, summary_stats, haplotypes, log, params
+#' @return List with genotypes, pedigree, snp_map, allele_freqs, summary_stats,
+#'   haplotypes, log, params. \code{summary_stats} includes the
+#'   within-generation \code{inbreeding_fis} plus founder-referenced cumulative
+#'   inbreeding columns \code{fis_unbiased}, \code{fst_vs_founder} (cumulative
+#'   diversity loss since founders), \code{fit_vs_founder} (total inbreeding vs
+#'   founders), \code{expected_fst_drift} (\eqn{1-(1-1/2N_e)^t}),
+#'   \code{ne_estimate}, and \code{mean_pedigree_F} (mean kinship-based
+#'   inbreeding of genotyped individuals per observed generation).
 #' @export
 simulate_from_pedigree <- function(
     vcf_cohort,
@@ -425,7 +432,27 @@ simulate_from_pedigree <- function(
       stringsAsFactors   = FALSE
     )
   }))
-  
+
+  # Founder-referenced (cumulative) inbreeding statistics. inbreeding_fis above
+  # is referenced to each generation's own allele frequencies and so returns to
+  # ~0 once random mating restores Hardy-Weinberg; fst_vs_founder/fit_vs_founder
+  # are measured against the founder gene pool and therefore accumulate over the
+  # synthetic generations. mean_pedigree_F is the mean kinship-based inbreeding
+  # of the genotyped individuals in each observed generation (NA for synthetic).
+  ne_used <- if (!is.null(n_eff) && is.finite(n_eff)) n_eff else
+    nrow(geno_store[[max_obs_gen + 1L]])
+  ped_F_by_gen <- vapply(seq_along(geno_store), function(i) {
+    gen <- i - 1L
+    if (gen <= max_obs_gen) {
+      f <- ped$inbreeding_F[ped$generation == gen]
+      if (length(f)) mean(f, na.rm = TRUE) else NA_real_
+    } else NA_real_
+  }, numeric(1))
+  summary_stats <- cbind(
+    summary_stats,
+    .inbreeding_trajectory(geno_store, n_eff = ne_used,
+                           ped_F_by_gen = ped_F_by_gen))
+
   if (verbose) {
     message("\n=== Pedigree Simulation Complete ===")
     print(summary_stats[, c("generation","n_individuals","obs_heterozygosity",

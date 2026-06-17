@@ -215,8 +215,15 @@
 #'   \item{\code{allele_freqs}}{Matrix of alternative allele frequencies,
 #'     dimensions \eqn{(n_{generations}+1) \times n_{SNPs}}.}
 #'   \item{\code{summary_stats}}{A \code{data.frame} of per-generation
-#'     statistics: observed/expected heterozygosity, \eqn{F_{IS}}, mean MAF,
-#'     fraction of fixed loci, and mean dosage.}
+#'     statistics: observed/expected heterozygosity, within-generation
+#'     \eqn{F_{IS}}, mean MAF, fraction of fixed loci, and mean dosage, plus
+#'     founder-referenced (cumulative) inbreeding columns \code{fis_unbiased}
+#'     (small-sample-corrected \eqn{F_{IS}}), \code{fst_vs_founder}
+#'     (\eqn{F_{ST}} = cumulative diversity loss since the founders),
+#'     \code{fit_vs_founder} (\eqn{F_{IT}} = total inbreeding vs founders),
+#'     \code{expected_fst_drift} (\eqn{1-(1-1/2N_e)^t}), \code{ne_estimate}
+#'     (realised \eqn{N_e} from heterozygosity decay), and \code{mean_pedigree_F}.
+#'     See \code{vignette} and package documentation for definitions.}
 #'   \item{\code{params}}{List of all input parameters used.}
 #' }
 #'
@@ -378,6 +385,15 @@ simulate_population <- function(
       stringsAsFactors   = FALSE
     )
   }))
+
+  # Founder-referenced (cumulative) inbreeding statistics. Unlike the
+  # within-generation inbreeding_fis above, fst_vs_founder / fit_vs_founder are
+  # measured against the fixed founder gene pool and therefore accumulate as
+  # drift erodes diversity. mean_pedigree_F carries the input inbreeding_F.
+  summary_stats <- cbind(
+    summary_stats,
+    .inbreeding_trajectory(geno_store, n_eff = n_eff,
+                           ped_F_by_gen = rep(inbreeding_F, length(geno_store))))
 
   if (verbose) {
     message("\n=== Simulation Complete ===")

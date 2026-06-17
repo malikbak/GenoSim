@@ -50,7 +50,7 @@ export_vcf <- function(sim_result, generation = "all",
     writeLines(c(
       "##fileformat=VCFv4.2",
       paste0("##fileDate=", format(Sys.Date(), "%Y%m%d")),
-      "##source=GenoSim_v1.1.3",
+      "##source=GenoSim_v1.2.0",
       "##reference=GRCh38",
       '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">',
       '##INFO=<ID=GEN,Number=1,Type=Integer,Description="Simulated Generation">',

@@ -1,3 +1,31 @@
+# GenoSim 1.2.0
+
+## New feature: founder-referenced (cumulative) inbreeding statistics
+
+The within-generation `inbreeding_fis` (Wright's *F*~IS~) is referenced to each
+generation's own allele frequencies, so a single round of random mating restores
+Hardy–Weinberg proportions and it returns to ~0 — it cannot represent the
+cumulative inbreeding that accrues over generations, and small founder samples
+also drive it spuriously negative. `simulate_population()` and
+`simulate_from_pedigree()` now additionally report, per generation, founder-
+referenced statistics that accumulate as drift erodes diversity:
+
+* `fis_unbiased` — *F*~IS~ using the unbiased Nei gene-diversity estimator
+  (`2n/(2n−1)` correction), removing the small-sample negativity.
+* `fst_vs_founder` — *F*~ST~ = 1 − H~e~(t)/H~e~(0), the cumulative loss of gene
+  diversity since the founder generation (the "evolutionary" inbreeding).
+* `fit_vs_founder` — *F*~IT~ = 1 − H~o~(t)/H~e~(0), total individual inbreeding
+  relative to the founders, satisfying 1 − *F*~IT~ = (1 − *F*~IS~)(1 − *F*~ST~).
+* `expected_fst_drift` — the theoretical Wright–Fisher expectation
+  1 − (1 − 1/2*N*~e~)^t for validation.
+* `ne_estimate` — realised effective size from the heterozygosity decay.
+* `mean_pedigree_F` — mean kinship-based pedigree inbreeding of the genotyped
+  individuals in each observed generation (the input *F* in population mode).
+
+All quantities are computed over loci polymorphic in the founders using
+ratio-of-sums (Nei's *G*~ST~ form) and are missing-data aware. The derivation is
+provided as a notebook in the project repository.
+
 # GenoSim 1.1.3
 
 ## Correctness fixes (mathematical / logical)

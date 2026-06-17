@@ -48,7 +48,14 @@ simulate_from_pedigree(
 \item{verbose}{Logical}
 }
 \value{
-List with genotypes, pedigree, snp_map, allele_freqs, summary_stats, haplotypes, log, params
+List with genotypes, pedigree, snp_map, allele_freqs, summary_stats,
+  haplotypes, log, params. \code{summary_stats} includes the
+  within-generation \code{inbreeding_fis} plus founder-referenced cumulative
+  inbreeding columns \code{fis_unbiased}, \code{fst_vs_founder} (cumulative
+  diversity loss since founders), \code{fit_vs_founder} (total inbreeding vs
+  founders), \code{expected_fst_drift} (\eqn{1-(1-1/2N_e)^t}),
+  \code{ne_estimate}, and \code{mean_pedigree_F} (mean kinship-based
+  inbreeding of genotyped individuals per observed generation).
 }
 \description{
 Simulate Genotype Data Constrained by a Real Family Pedigree and VCF

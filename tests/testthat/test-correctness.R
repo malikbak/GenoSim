@@ -99,3 +99,59 @@ test_that("export_plink writes identical SEX in .ped and .raw and tolerates NA",
   expect_identical(ped_line1[7:8], c("0", "0"))
   unlink(od, recursive = TRUE)
 })
+
+# ---- founder-referenced (cumulative) inbreeding statistics ------------------
+
+test_that("founder-referenced inbreeding columns are present and well-formed", {
+  sim <- simulate_population(n_founders = 100, n_snps = 300, n_generations = 6,
+          n_eff = 40, chromosomes = 1:3, seed = 5, verbose = FALSE)
+  ss <- sim$summary_stats
+  expect_true(all(c("fis_unbiased","fst_vs_founder","fit_vs_founder",
+                    "expected_fst_drift","ne_estimate","mean_pedigree_F")
+                  %in% names(ss)))
+  # Founder generation is the fixed baseline => F_ST = F_IT = 0 at gen 0.
+  expect_equal(ss$fst_vs_founder[1], 0, tolerance = 1e-9)
+  # Wright identity 1 - F_IT = (1 - F_IS)(1 - F_ST) over the same locus set.
+  lhs <- 1 - ss$fit_vs_founder
+  rhs <- (1 - ss$fis_unbiased) * (1 - ss$fst_vs_founder)
+  expect_equal(lhs, rhs, tolerance = 1e-4)
+})
+
+test_that("fst_vs_founder accumulates under drift toward the WF expectation", {
+  sim <- simulate_population(n_founders = 120, n_snps = 600, n_generations = 8,
+          n_eff = 30, mut_rate = 0, chromosomes = 1:4, seed = 8, verbose = FALSE)
+  ss <- sim$summary_stats
+  # Cumulative diversity loss must increase from founders to the last generation
+  expect_gt(ss$fst_vs_founder[nrow(ss)], ss$fst_vs_founder[2])
+  expect_gt(ss$fst_vs_founder[nrow(ss)], 0)
+  # ...and stay in a sane neighbourhood of the theoretical drift curve
+  expect_lt(abs(ss$fst_vs_founder[nrow(ss)] - ss$expected_fst_drift[nrow(ss)]), 0.15)
+})
+
+test_that("fis_unbiased corrects the small-sample negativity of inbreeding_fis", {
+  # Tiny random-mating cohort: biased F_IS is pulled negative by ~ -1/(2n-1);
+  # the unbiased version should be closer to zero (less negative).
+  set.seed(3)
+  g <- t(replicate(5, rbinom(400, 2, 0.5)))          # 5 individuals, HWE-ish
+  vcf <- list(geno_matrix = `rownames<-`(g, paste0("F", 1:5)),
+              snp_map = data.frame(snp_id = paste0("s", 1:400),
+                                   chrom = 1L, pos_bp = 1:400,
+                                   cohort_maf = 0.5))
+  # use the internal trajectory helper directly on a one-generation list
+  tr <- GenoSim:::.inbreeding_trajectory(list(vcf$geno_matrix))
+  fis_biased <- 1 - mean(g == 1L) / mean(2 * (colMeans(g)/2) * (1 - colMeans(g)/2))
+  expect_gte(tr$fis_unbiased[1], fis_biased - 1e-6)   # unbiased >= biased
+})
+
+test_that("pedigree mode reports accumulating founder inbreeding", {
+  vcf <- read_vcf_cohort(example_vcf_dir(), verbose = FALSE)
+  ped <- read_pedigree(example_ped_path(), verbose = FALSE)
+  sim <- suppressMessages(simulate_from_pedigree(vcf, ped, extra_generations = 4,
+          n_eff = 30, seed = 42, verbose = FALSE))
+  ss <- sim$summary_stats
+  expect_equal(ss$fst_vs_founder[1], 0, tolerance = 1e-9)
+  # later synthetic generation has higher cumulative F_ST than the founders
+  expect_gt(ss$fst_vs_founder[nrow(ss)], 0)
+  # observed consanguineous generations carry a positive mean pedigree F
+  expect_true(any(ss$mean_pedigree_F > 0, na.rm = TRUE))
+})
