@@ -8,7 +8,7 @@ Authors@R: c(
     person("GenoSim", "Abu Bakar",
            email = "malikabubakar279@gmail.com",
            role  = c("aut", "cre"),
-           comment = c(ORCID = "0000-0000-0000-0000"))
+           comment = c(ORCID = "0009-0000-4303-7872"))
   )
 Description: GenoSim simulates diploid SNP genotype data for up to 10
     generations using biologically realistic population genetics models.
